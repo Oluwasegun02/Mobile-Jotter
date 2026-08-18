@@ -30,6 +30,8 @@ import com.example.ui.screens.SettingsDialog
 import com.example.ui.screens.TrashScreen
 import com.example.ui.theme.JotterTheme
 import com.example.viewmodel.JotterViewModel
+import com.example.viewmodel.NoteViewModel
+import com.example.viewmodel.NoteViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
@@ -39,13 +41,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val app = application
-            val jotterViewModel: JotterViewModel = viewModel(
-                factory = object : ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return JotterViewModel(app) as T
-                    }
-                }
+            val jotterViewModel: NoteViewModel = viewModel(
+                factory = NoteViewModelFactory(app)
             )
 
             val isDarkModePref by jotterViewModel.isDarkMode.collectAsState()

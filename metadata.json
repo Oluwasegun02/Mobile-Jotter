@@ -1,5 +1,5 @@
 {
-  "name": "Mobile Jotter",
+  "name": "Jotter",
   "description": "A fast, versatile mobile jotter for quick notes, checklists, voice memos, and sketches with tags, folders, offline Room persistence, and PIN lock.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -59,19 +59,15 @@ data class EditorState(
     val autosaveStatus: String = "All changes saved"
 )
 
-class JotterViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val repository: NoteRepository
-    val securityManager = SecurityManager(application)
-    val reminderManager = ReminderManager(application)
-    val audioRecorder = AudioRecorderHelper(application)
-    val audioPlayer = AudioPlayerHelper()
-    val speechToText = SpeechToTextHelper(application)
-
-    init {
-        val db = AppDatabase.getDatabase(application)
-        repository = NoteRepository(db.noteDao())
-    }
+class JotterViewModel(
+    application: Application,
+    private val repository: NoteRepository = NoteRepository(AppDatabase.getDatabase(application).noteDao()),
+    val securityManager: SecurityManager = SecurityManager(application),
+    val reminderManager: ReminderManager = ReminderManager(application),
+    val audioRecorder: AudioRecorderHelper = AudioRecorderHelper(application),
+    val audioPlayer: AudioPlayerHelper = AudioPlayerHelper(),
+    val speechToText: SpeechToTextHelper = SpeechToTextHelper(application)
+) : AndroidViewModel(application) {
 
     // Navigation & UI View Modes
     private val _currentScreen = MutableStateFlow(ScreenDestination.HOME)

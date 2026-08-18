@@ -66,7 +66,7 @@ class AudioRecorderHelper(private val context: Context) {
 
             timerJob = scope.launch {
                 while (_isRecording.value) {
-                    delay(100)
+                    delay(1000)
                     _recordDurationSeconds.value += 1
                     try {
                         _amplitude.value = mediaRecorder?.maxAmplitude ?: 0
