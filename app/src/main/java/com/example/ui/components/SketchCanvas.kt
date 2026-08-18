@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -211,7 +212,7 @@ fun SketchCanvas(
                             if (currentPoints.isNotEmpty()) {
                                 val stroke = SketchStroke(
                                     points = currentPoints.toList(),
-                                    colorHex = if (isEraser) (if (isDark) 0xFF141822 else 0xFFFCFCFD) else (selectedColor.value.toLong() shr 32 or (selectedColor.value.toLong() shl 32)),
+                                    colorHex = if (isEraser) (if (isDark) 0xFF141822L else 0xFFFCFCFDL) else (selectedColor.toArgb().toLong() and 0xFFFFFFFFL),
                                     strokeWidth = strokeWidth,
                                     isEraser = isEraser
                                 )

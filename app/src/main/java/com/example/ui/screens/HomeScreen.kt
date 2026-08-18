@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,20 +34,33 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +68,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -72,16 +87,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
+import com.example.model.DateFilterState
+import com.example.model.NoteSortOrder
 import com.example.model.NoteType
 import com.example.model.ScreenDestination
 import com.example.model.ViewMode
+import com.example.ui.components.MiniCalendarWidget
 import com.example.ui.components.NoteCard
 import com.example.ui.components.QuickJotBar
 import com.example.ui.theme.MinimalBgDark
@@ -105,17 +128,22 @@ fun HomeScreen(
 ) {
     val notes by viewModel.homeFilteredNotes.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+    val sortOrder by viewModel.sortOrder.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedFolder by viewModel.selectedFolder.collectAsState()
     val selectedTag by viewModel.selectedTag.collectAsState()
     val folders by viewModel.folderList.collectAsState()
     val allTags by viewModel.allTags.collectAsState()
+    val dateFilter by viewModel.dateFilter.collectAsState()
+    val notesByDate by viewModel.notesByDateKey.collectAsState()
 
+    val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
+    var showSortMenu by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
 
@@ -208,6 +236,17 @@ fun HomeScreen(
                         scope.launch { drawerState.close() }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.CalendarMonth, contentDescription = null) },
+                    label = { Text("Daily Journey & Calendar", fontWeight = FontWeight.Medium) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        viewModel.setScreen(ScreenDestination.CALENDAR_JOURNEY)
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding).testTag("drawer_calendar_journey")
                 )
 
                 NavigationDrawerItem(
@@ -308,8 +347,74 @@ fun HomeScreen(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        // Sorting Menu Toggle
+                        Box {
+                            IconButton(
+                                onClick = { showSortMenu = true },
+                                modifier = Modifier.size(36.dp).testTag("toggle_sort_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                    contentDescription = "Sort Notes: ${sortOrder.label}",
+                                    tint = if (sortOrder != NoteSortOrder.NEWEST_FIRST) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                                modifier = Modifier.testTag("sort_dropdown_menu")
+                            ) {
+                                NoteSortOrder.values().forEach { order ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = order.label,
+                                                    fontWeight = if (sortOrder == order) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (sortOrder == order) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 14.sp
+                                                )
+                                                if (sortOrder == order) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Icon(
+                                                        Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.setSortOrder(order)
+                                            showSortMenu = false
+                                        },
+                                        modifier = Modifier.testTag("sort_option_${order.name}")
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.setScreen(ScreenDestination.CALENDAR_JOURNEY) },
+                            modifier = Modifier.size(36.dp).testTag("calendar_journey_top_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CalendarMonth,
+                                contentDescription = "Daily Journey Calendar",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
                         IconButton(
                             onClick = { viewModel.toggleViewMode() },
                             modifier = Modifier.size(36.dp).testTag("toggle_view_mode_button")
@@ -407,7 +512,33 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Mini-Calendar Chronological Overview & Date Range Filter Widget
+                MiniCalendarWidget(
+                    dateFilter = dateFilter,
+                    notesByDate = notesByDate,
+                    onSelectDay = { epochMillis ->
+                        viewModel.filterBySpecificDate(epochMillis)
+                    },
+                    onSelectToday = {
+                        viewModel.filterByToday()
+                    },
+                    onSelectThisWeek = {
+                        viewModel.filterByThisWeek()
+                    },
+                    onSelectCustomRange = { start, end ->
+                        viewModel.filterByCustomRange(start, end)
+                    },
+                    onClearFilter = {
+                        viewModel.clearDateFilter()
+                    },
+                    onOpenFullCalendar = {
+                        viewModel.setScreen(ScreenDestination.CALENDAR_JOURNEY)
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Category Filter Pills: Active `#D6E3FF`, Inactive White with `#C4C6D0` border
                 LazyRow(
@@ -513,35 +644,162 @@ fun HomeScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(32.dp),
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(MinimalPrimaryContainerLight),
-                                contentAlignment = Alignment.Center
+                            // Friendly Vector Illustration Card
+                            Card(
+                                shape = RoundedCornerShape(28.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isDark) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f) else Color(0xFFE2E7F0)
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.size(170.dp)
                             ) {
-                                Text("✏️", fontSize = 28.sp)
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.img_empty_notes),
+                                        contentDescription = "Empty Notes Illustration",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(12.dp)
+                                            .clip(RoundedCornerShape(20.dp)),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
                             Text(
-                                text = if (searchQuery.isNotBlank() || selectedTag != null) "No matching jots" else "No jots yet",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = when {
+                                    dateFilter.isActive -> "No jots on this date"
+                                    searchQuery.isNotBlank() -> "No results found"
+                                    selectedTag != null -> "No jots tagged #$selectedTag"
+                                    selectedFolder != "All" -> "No jots in $selectedFolder"
+                                    else -> "Capture your first thought"
+                                },
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
                             Text(
-                                text = "Tap the quick capture bar below to start jotting.",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = when {
+                                    dateFilter.isActive -> "There are no notes recorded for the selected date or range."
+                                    searchQuery.isNotBlank() -> "Try searching with different keywords or clear the search query."
+                                    selectedTag != null -> "Try selecting another tag or creating a new note with this tag."
+                                    selectedFolder != "All" -> "Create your first note in this folder using the button below."
+                                    else -> "Jot down ideas, daily reflections, checklists, sketches, or voice memos."
+                                },
+                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            // Call-To-Action Controls
+                            if (dateFilter.isActive) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.createJourneyEntry(NoteType.TEXT) },
+                                        modifier = Modifier.testTag("empty_create_dated_note_button")
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Add Jot for Date")
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { viewModel.clearDateFilter() },
+                                        modifier = Modifier.testTag("empty_clear_date_filter_button")
+                                    ) {
+                                        Text("Show All")
+                                    }
+                                }
+                            } else if (searchQuery.isNotBlank()) {
+                                Button(
+                                    onClick = { viewModel.setSearchQuery("") },
+                                    modifier = Modifier.testTag("empty_clear_search_button")
+                                ) {
+                                    Text("Clear Search")
+                                }
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.createNewNote(NoteType.TEXT) },
+                                        shape = RoundedCornerShape(16.dp),
+                                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                                        modifier = Modifier.testTag("empty_state_create_first_note_btn")
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Create First Note", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    }
+
+                                    // Quick entry format shortcuts
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        FilledTonalButton(
+                                            onClick = { viewModel.createNewNote(NoteType.CHECKLIST) },
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.testTag("empty_state_create_checklist_btn")
+                                        ) {
+                                            Icon(Icons.Default.Checklist, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Checklist", fontSize = 12.sp)
+                                        }
+
+                                        FilledTonalButton(
+                                            onClick = { viewModel.createNewNote(NoteType.SKETCH) },
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.testTag("empty_state_create_sketch_btn")
+                                        ) {
+                                            Icon(Icons.Default.Draw, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Sketch", fontSize = 12.sp)
+                                        }
+
+                                        FilledTonalButton(
+                                            onClick = { viewModel.createNewNote(NoteType.AUDIO) },
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.testTag("empty_state_create_audio_btn")
+                                        ) {
+                                            Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Voice", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
@@ -583,7 +841,9 @@ fun HomeScreen(
                                         onPinClick = { viewModel.togglePinFromCard(note) },
                                         onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                         onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
-                                        onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) }
+                                        onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                        onShareClick = { viewModel.shareNoteContent(context, note) },
+                                        onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                     )
                                 }
 
@@ -608,7 +868,9 @@ fun HomeScreen(
                                     onPinClick = { viewModel.togglePinFromCard(note) },
                                     onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                     onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
-                                    onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) }
+                                    onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                    onShareClick = { viewModel.shareNoteContent(context, note) },
+                                    onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                 )
                             }
                         }
@@ -648,7 +910,9 @@ fun HomeScreen(
                                         onPinClick = { viewModel.togglePinFromCard(note) },
                                         onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                         onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
-                                        onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) }
+                                        onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                        onShareClick = { viewModel.shareNoteContent(context, note) },
+                                        onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                     )
                                 }
 
@@ -673,7 +937,9 @@ fun HomeScreen(
                                     onPinClick = { viewModel.togglePinFromCard(note) },
                                     onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                     onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
-                                    onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) }
+                                    onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                    onShareClick = { viewModel.shareNoteContent(context, note) },
+                                    onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                 )
                             }
                         }

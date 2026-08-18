@@ -12,7 +12,9 @@ import com.example.data.AppDatabase
 import com.example.data.NoteEntity
 import com.example.data.NoteRepository
 import com.example.model.ChecklistItem
+import com.example.model.DateFilterState
 import com.example.model.NoteFontStyle
+import com.example.model.NoteSortOrder
 import com.example.model.NoteType
 import com.example.model.ScreenDestination
 import com.example.model.SketchStroke
@@ -26,10 +28,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -88,6 +92,10 @@ class JotterViewModel(
     private val _isDarkMode = MutableStateFlow<Boolean?>(null) // null = system default
     val isDarkMode: StateFlow<Boolean?> = _isDarkMode.asStateFlow()
 
+    // App PIN startup lock state
+    private val _isAppLocked = MutableStateFlow(!securityManager.isAppUnlocked())
+    val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
+
     // PIN lock dialog state
     private val _pinDialogNoteToUnlock = MutableStateFlow<NoteEntity?>(null)
     val pinDialogNoteToUnlock: StateFlow<NoteEntity?> = _pinDialogNoteToUnlock.asStateFlow()
@@ -101,6 +109,14 @@ class JotterViewModel(
 
     private var autosaveJob: Job? = null
 
+    // Date Range & Calendar Filters
+    private val _dateFilter = MutableStateFlow<DateFilterState>(DateFilterState.All)
+    val dateFilter: StateFlow<DateFilterState> = _dateFilter.asStateFlow()
+
+    // Sorting State
+    private val _sortOrder = MutableStateFlow(NoteSortOrder.NEWEST_FIRST)
+    val sortOrder: StateFlow<NoteSortOrder> = _sortOrder.asStateFlow()
+
     // Notes Data Streams
     val rawActiveNotes = repository.activeNotes
     val archivedNotes = repository.archivedNotes
@@ -110,31 +126,95 @@ class JotterViewModel(
     val activeNotesCount = repository.activeNotesCount
     val deletedNotesCount = repository.deletedNotesCount
 
-    // Combined filtered notes for Home
-    val homeFilteredNotes: StateFlow<List<NoteEntity>> = combine(
-        rawActiveNotes,
+    // Data class for combined filter parameters
+    private data class HomeFilterCriteria(
+        val query: String,
+        val folder: String,
+        val tag: String?,
+        val dateFilter: DateFilterState,
+        val sortOrder: NoteSortOrder
+    )
+
+    private val filterCriteria = combine(
         _searchQuery,
         _selectedFolder,
-        _selectedTag
-    ) { notes, query, folder, tag ->
+        _selectedTag,
+        _dateFilter,
+        _sortOrder
+    ) { query, folder, tag, dateFilterState, sort ->
+        HomeFilterCriteria(query, folder, tag, dateFilterState, sort)
+    }
+
+    // Combined filtered & sorted notes for Home
+    val homeFilteredNotes: StateFlow<List<NoteEntity>> = rawActiveNotes.combine(filterCriteria) { notes, criteria ->
         var list = notes
 
-        if (folder != "All") {
-            list = list.filter { it.folder.equals(folder, ignoreCase = true) }
+        if (criteria.folder != "All") {
+            list = list.filter { it.folder.equals(criteria.folder, ignoreCase = true) }
         }
 
-        if (tag != null) {
-            list = list.filter { it.getTagList().contains(tag) }
+        if (criteria.tag != null) {
+            list = list.filter { it.tags.any { t -> t.equals(criteria.tag, ignoreCase = true) } }
         }
 
-        if (query.isNotBlank()) {
-            val q = query.trim().lowercase(Locale.getDefault())
+        // Apply Date Filtering
+        val sdfDay = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        when (val dateState = criteria.dateFilter) {
+            is DateFilterState.All -> { /* No date filtering */ }
+            is DateFilterState.Today -> {
+                val todayKey = sdfDay.format(Date())
+                list = list.filter { sdfDay.format(Date(it.createdAt)) == todayKey }
+            }
+            is DateFilterState.ThisWeek -> {
+                val cal = Calendar.getInstance()
+                cal.firstDayOfWeek = Calendar.MONDAY
+                cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val startOfWeek = cal.timeInMillis
+                cal.add(Calendar.DAY_OF_WEEK, 6)
+                cal.set(Calendar.HOUR_OF_DAY, 23)
+                cal.set(Calendar.MINUTE, 59)
+                cal.set(Calendar.SECOND, 59)
+                cal.set(Calendar.MILLISECOND, 999)
+                val endOfWeek = cal.timeInMillis
+                list = list.filter { it.createdAt in startOfWeek..endOfWeek }
+            }
+            is DateFilterState.SpecificDate -> {
+                val targetKey = sdfDay.format(Date(dateState.epochMillis))
+                list = list.filter { sdfDay.format(Date(it.createdAt)) == targetKey }
+            }
+            is DateFilterState.CustomRange -> {
+                list = list.filter { it.createdAt in dateState.startMillis..dateState.endMillis }
+            }
+        }
+
+        if (criteria.query.isNotBlank()) {
+            val q = criteria.query.trim().lowercase(Locale.getDefault())
             list = list.filter { note ->
                 note.title.lowercase(Locale.getDefault()).contains(q) ||
                 note.content.lowercase(Locale.getDefault()).contains(q) ||
-                note.tags.lowercase(Locale.getDefault()).contains(q) ||
+                note.tags.any { it.lowercase(Locale.getDefault()).contains(q) } ||
                 note.parseChecklist().any { it.text.lowercase(Locale.getDefault()).contains(q) }
             }
+        }
+
+        // Apply Sorting
+        list = when (criteria.sortOrder) {
+            NoteSortOrder.NEWEST_FIRST -> list.sortedWith(
+                compareByDescending<NoteEntity> { it.isPinned }
+                    .thenByDescending { it.updatedAt }
+            )
+            NoteSortOrder.OLDEST_FIRST -> list.sortedWith(
+                compareByDescending<NoteEntity> { it.isPinned }
+                    .thenBy { it.createdAt }
+            )
+            NoteSortOrder.ALPHABETICAL -> list.sortedWith(
+                compareByDescending<NoteEntity> { it.isPinned }
+                    .thenBy { (if (it.title.isNotBlank()) it.title else it.content).lowercase(Locale.getDefault()) }
+            )
         }
 
         list
@@ -146,7 +226,7 @@ class JotterViewModel(
 
     // All distinct tags across all active notes
     val allTags: StateFlow<List<String>> = rawActiveNotes.combine(_searchQuery) { notes, _ ->
-        notes.flatMap { it.getTagList() }.distinct().sorted()
+        notes.flatMap { it.tags }.distinct().sorted()
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -162,6 +242,280 @@ class JotterViewModel(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = listOf("All", "Personal", "Work", "Ideas", "Study", "Journal")
     )
+
+    // Calendar & Daily Journey States
+    private val _selectedJourneyDateMillis = MutableStateFlow(System.currentTimeMillis())
+    val selectedJourneyDateMillis: StateFlow<Long> = _selectedJourneyDateMillis.asStateFlow()
+
+    // Notes grouped by "yyyy-MM-dd"
+    val notesByDateKey: StateFlow<Map<String, List<NoteEntity>>> = rawActiveNotes.map { notes ->
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        notes.groupBy { sdf.format(Date(it.createdAt)) }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyMap()
+    )
+
+    // Notes on the currently selected calendar journey date
+    val selectedJourneyDateNotes: StateFlow<List<NoteEntity>> = combine(
+        rawActiveNotes,
+        _selectedJourneyDateMillis
+    ) { notes, selectedMillis ->
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val selectedKey = sdf.format(Date(selectedMillis))
+        notes.filter { sdf.format(Date(it.createdAt)) == selectedKey }
+            .sortedByDescending { it.createdAt }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    // Daily streak calculation (consecutive active days)
+    val journeyStreak: StateFlow<Int> = rawActiveNotes.map { notes ->
+        if (notes.isEmpty()) return@map 0
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val activeDays = notes.map { sdf.format(Date(it.createdAt)) }.toSet()
+        val cal = Calendar.getInstance()
+        var streak = 0
+        val todayKey = sdf.format(cal.time)
+
+        if (!activeDays.contains(todayKey)) {
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+            val yesterdayKey = sdf.format(cal.time)
+            if (!activeDays.contains(yesterdayKey)) {
+                return@map 0
+            }
+        }
+
+        while (true) {
+            val key = sdf.format(cal.time)
+            if (activeDays.contains(key)) {
+                streak++
+                cal.add(Calendar.DAY_OF_YEAR, -1)
+            } else {
+                break
+            }
+        }
+        streak
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    fun selectJourneyDate(epochMillis: Long) {
+        _selectedJourneyDateMillis.value = epochMillis
+    }
+
+    fun selectJourneyDateToday() {
+        _selectedJourneyDateMillis.value = System.currentTimeMillis()
+    }
+
+    fun setDateFilter(filter: DateFilterState) {
+        _dateFilter.value = filter
+    }
+
+    fun filterBySpecificDate(epochMillis: Long) {
+        val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+        _dateFilter.value = DateFilterState.SpecificDate(epochMillis, sdf.format(Date(epochMillis)))
+        _selectedJourneyDateMillis.value = epochMillis
+    }
+
+    fun filterByToday() {
+        _dateFilter.value = DateFilterState.Today
+        _selectedJourneyDateMillis.value = System.currentTimeMillis()
+    }
+
+    fun filterByThisWeek() {
+        _dateFilter.value = DateFilterState.ThisWeek
+    }
+
+    fun filterByCustomRange(startMillis: Long, endMillis: Long) {
+        val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
+        val label = "${sdf.format(Date(startMillis))} – ${sdf.format(Date(endMillis))}"
+        _dateFilter.value = DateFilterState.CustomRange(startMillis, endMillis, label)
+    }
+
+    fun clearDateFilter() {
+        _dateFilter.value = DateFilterState.All
+    }
+
+    fun setSortOrder(order: NoteSortOrder) {
+        _sortOrder.value = order
+    }
+
+    fun cycleSortOrder() {
+        _sortOrder.value = when (_sortOrder.value) {
+            NoteSortOrder.NEWEST_FIRST -> NoteSortOrder.OLDEST_FIRST
+            NoteSortOrder.OLDEST_FIRST -> NoteSortOrder.ALPHABETICAL
+            NoteSortOrder.ALPHABETICAL -> NoteSortOrder.NEWEST_FIRST
+        }
+    }
+
+    fun buildNotePlainText(note: NoteEntity): String {
+        return buildString {
+            if (note.title.isNotBlank()) {
+                appendLine(note.title)
+                appendLine("═".repeat(note.title.length.coerceAtLeast(10)))
+                appendLine()
+            }
+            if (note.noteType == "CHECKLIST") {
+                val items = note.parseChecklist()
+                items.forEach { item ->
+                    appendLine(if (item.isDone) "[✓] ${item.text}" else "[ ] ${item.text}")
+                }
+            } else {
+                appendLine(note.content)
+            }
+            if (note.tags.isNotEmpty()) {
+                appendLine()
+                appendLine(note.tags.joinToString(" ") { "#$it" })
+            }
+            appendLine()
+            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(note.updatedAt))
+            appendLine("— Exported from Jotter • $dateStr")
+        }
+    }
+
+    fun buildEditorPlainText(editor: EditorState): String {
+        return buildString {
+            if (editor.title.isNotBlank()) {
+                appendLine(editor.title)
+                appendLine("═".repeat(editor.title.length.coerceAtLeast(10)))
+                appendLine()
+            }
+            if (editor.noteType == NoteType.CHECKLIST) {
+                editor.checklistItems.forEach { item ->
+                    appendLine(if (item.isDone) "[✓] ${item.text}" else "[ ] ${item.text}")
+                }
+            } else {
+                appendLine(editor.content)
+            }
+            if (editor.tags.isNotEmpty()) {
+                appendLine()
+                appendLine(editor.tags.joinToString(" ") { "#$it" })
+            }
+            appendLine()
+            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(System.currentTimeMillis()))
+            appendLine("— Exported from Jotter • $dateStr")
+        }
+    }
+
+    fun shareNoteContent(context: Context, note: NoteEntity) {
+        val text = buildNotePlainText(note)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Jotter Note" })
+            putExtra(Intent.EXTRA_TEXT, text)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val chooser = Intent.createChooser(sendIntent, "Share Note via").apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(chooser)
+    }
+
+    fun shareEditorNoteContent(context: Context) {
+        val text = buildEditorPlainText(_editorState.value)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, _editorState.value.title.ifBlank { "Jotter Note" })
+            putExtra(Intent.EXTRA_TEXT, text)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val chooser = Intent.createChooser(sendIntent, "Share Note via").apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(chooser)
+    }
+
+    fun exportNoteAsTxtFile(context: Context, note: NoteEntity) {
+        try {
+            val text = buildNotePlainText(note)
+            val cleanTitle = note.title.ifBlank { "Jotter_Note" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val fileName = "${cleanTitle}_${System.currentTimeMillis()}.txt"
+            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val file = File(exportDir, fileName).apply {
+                writeText(text)
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Jotter Note" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(sendIntent, "Save or Export Note as .txt").apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            shareNoteContent(context, note)
+        }
+    }
+
+    fun exportEditorNoteAsTxtFile(context: Context) {
+        try {
+            val text = buildEditorPlainText(_editorState.value)
+            val cleanTitle = _editorState.value.title.ifBlank { "Jotter_Note" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val fileName = "${cleanTitle}_${System.currentTimeMillis()}.txt"
+            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val file = File(exportDir, fileName).apply {
+                writeText(text)
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, _editorState.value.title.ifBlank { "Jotter Note" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(sendIntent, "Save or Export Note as .txt").apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            shareEditorNoteContent(context)
+        }
+    }
+
+    fun createJourneyEntry(type: NoteType = NoteType.TEXT, dateMillis: Long = _selectedJourneyDateMillis.value) {
+        flushAutosaveNow()
+        val dateFormatted = SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(dateMillis))
+        _editorState.value = EditorState(
+            noteId = 0L,
+            title = "Journey — $dateFormatted",
+            content = "",
+            noteType = type,
+            folder = "Journal",
+            tags = listOf("DailyJourney", "Journal"),
+            colorIndex = 1, // Lavender
+            fontStyle = NoteFontStyle.SERIF,
+            fontSize = 16f,
+            checklistItems = if (type == NoteType.CHECKLIST) listOf(
+                ChecklistItem(UUID.randomUUID().toString(), "Morning Reflection", false),
+                ChecklistItem(UUID.randomUUID().toString(), "Key Objective of the Day", false),
+                ChecklistItem(UUID.randomUUID().toString(), "Gratitude / Evening Note", false)
+            ) else emptyList(),
+            createdAt = dateMillis,
+            autosaveStatus = "New Journey Entry"
+        )
+        _currentScreen.value = ScreenDestination.EDITOR
+    }
 
     fun setScreen(destination: ScreenDestination) {
         if (_currentScreen.value == ScreenDestination.EDITOR && destination != ScreenDestination.EDITOR) {
@@ -263,6 +617,28 @@ class JotterViewModel(
         _isSettingUpPin.value = false
     }
 
+    fun unlockAppWithPin(pin: String): Boolean {
+        val success = securityManager.unlockApp(pin)
+        if (success) {
+            _isAppLocked.value = false
+        }
+        return success
+    }
+
+    fun lockAppNow() {
+        securityManager.lockApp()
+        _isAppLocked.value = true
+    }
+
+    fun setupMasterPin(pin: String): Boolean {
+        val success = securityManager.setMasterPin(pin)
+        if (success) {
+            _isAppLocked.value = false
+            _isSettingUpPin.value = false
+        }
+        return success
+    }
+
     fun onPinEnteredForNote(pin: String): Boolean {
         val note = _pinDialogNoteToUnlock.value ?: return false
         if (securityManager.verifyMasterPin(pin)) {
@@ -282,6 +658,7 @@ class JotterViewModel(
         val success = securityManager.setMasterPin(pin)
         if (success) {
             _isSettingUpPin.value = false
+            _isAppLocked.value = false
         }
         return success
     }
@@ -508,7 +885,7 @@ class JotterViewModel(
             content = state.content,
             noteType = state.noteType.name,
             folder = state.folder.ifBlank { "General" },
-            tags = state.tags.joinToString(","),
+            tags = state.tags,
             colorIndex = state.colorIndex,
             fontStyle = state.fontStyle.name,
             fontSize = state.fontSize,
@@ -607,8 +984,8 @@ class JotterViewModel(
                 }
                 sb.append("\n")
             }
-            if (note.tags.isNotBlank()) {
-                sb.append("Tags: ").append(note.tags.split(",").joinToString(" ") { "#$it" }).append("\n")
+            if (note.tags.isNotEmpty()) {
+                sb.append("Tags: ").append(note.tags.joinToString(" ") { "#$it" }).append("\n")
             }
             sb.append("— Shared via Jotter")
 

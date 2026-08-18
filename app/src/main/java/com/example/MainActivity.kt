@@ -24,8 +24,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.ScreenDestination
 import com.example.ui.components.PinLockDialog
 import com.example.ui.screens.ArchiveScreen
+import com.example.ui.screens.CalendarJourneyScreen
 import com.example.ui.screens.EditorScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.PinLockScreen
 import com.example.ui.screens.SettingsDialog
 import com.example.ui.screens.TrashScreen
 import com.example.ui.theme.JotterTheme
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
             val currentScreen by jotterViewModel.currentScreen.collectAsState()
             val noteToUnlock by jotterViewModel.pinDialogNoteToUnlock.collectAsState()
             val isSettingUpPin by jotterViewModel.isSettingUpPin.collectAsState()
+            val isAppLocked by jotterViewModel.isAppLocked.collectAsState()
 
             var showSettingsDialog by remember { mutableStateOf(false) }
 
@@ -56,65 +59,78 @@ class MainActivity : ComponentActivity() {
 
             JotterTheme(darkTheme = useDarkTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    // Screen Navigation with fade transitions
-                    AnimatedContent(
-                        targetState = currentScreen,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        label = "ScreenTransition"
-                    ) { screen ->
-                        when (screen) {
-                            ScreenDestination.HOME -> {
-                                HomeScreen(
-                                    viewModel = jotterViewModel,
-                                    onOpenSettings = { showSettingsDialog = true }
-                                )
-                            }
-                            ScreenDestination.EDITOR -> {
-                                EditorScreen(viewModel = jotterViewModel)
-                            }
-                            ScreenDestination.ARCHIVE -> {
-                                ArchiveScreen(viewModel = jotterViewModel)
-                            }
-                            ScreenDestination.TRASH -> {
-                                TrashScreen(viewModel = jotterViewModel)
-                            }
-                            ScreenDestination.SETTINGS -> {
-                                HomeScreen(
-                                    viewModel = jotterViewModel,
-                                    onOpenSettings = { showSettingsDialog = true }
-                                )
+                    if (isAppLocked) {
+                        // App Startup PIN Lock Screen
+                        PinLockScreen(
+                            isSetupMode = false,
+                            onPinSuccess = {},
+                            onVerifyPin = { pin -> jotterViewModel.unlockAppWithPin(pin) },
+                            onSaveNewPin = { pin -> jotterViewModel.setupMasterPin(pin) }
+                        )
+                    } else {
+                        // Screen Navigation with fade transitions
+                        AnimatedContent(
+                            targetState = currentScreen,
+                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            label = "ScreenTransition"
+                        ) { screen ->
+                            when (screen) {
+                                ScreenDestination.HOME -> {
+                                    HomeScreen(
+                                        viewModel = jotterViewModel,
+                                        onOpenSettings = { showSettingsDialog = true }
+                                    )
+                                }
+                                ScreenDestination.EDITOR -> {
+                                    EditorScreen(viewModel = jotterViewModel)
+                                }
+                                ScreenDestination.CALENDAR_JOURNEY -> {
+                                    CalendarJourneyScreen(viewModel = jotterViewModel)
+                                }
+                                ScreenDestination.ARCHIVE -> {
+                                    ArchiveScreen(viewModel = jotterViewModel)
+                                }
+                                ScreenDestination.TRASH -> {
+                                    TrashScreen(viewModel = jotterViewModel)
+                                }
+                                ScreenDestination.SETTINGS -> {
+                                    HomeScreen(
+                                        viewModel = jotterViewModel,
+                                        onOpenSettings = { showSettingsDialog = true }
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    // PIN unlock prompt for locked notes
-                    noteToUnlock?.let { note ->
-                        PinLockDialog(
-                            isSetupMode = false,
-                            onPinEntered = { enteredPin ->
-                                jotterViewModel.onPinEnteredForNote(enteredPin)
-                            },
-                            onDismiss = { jotterViewModel.dismissPinDialog() }
-                        )
-                    }
+                        // PIN unlock prompt for locked individual notes
+                        noteToUnlock?.let { note ->
+                            PinLockDialog(
+                                isSetupMode = false,
+                                onPinEntered = { enteredPin ->
+                                    jotterViewModel.onPinEnteredForNote(enteredPin)
+                                },
+                                onDismiss = { jotterViewModel.dismissPinDialog() }
+                            )
+                        }
 
-                    // Master PIN setup dialog
-                    if (isSettingUpPin) {
-                        PinLockDialog(
-                            isSetupMode = true,
-                            onPinEntered = { newPin ->
-                                jotterViewModel.onPinSetupCompleted(newPin)
-                            },
-                            onDismiss = { jotterViewModel.dismissPinDialog() }
-                        )
-                    }
+                        // Master PIN setup dialog
+                        if (isSettingUpPin) {
+                            PinLockDialog(
+                                isSetupMode = true,
+                                onPinEntered = { newPin ->
+                                    jotterViewModel.onPinSetupCompleted(newPin)
+                                },
+                                onDismiss = { jotterViewModel.dismissPinDialog() }
+                            )
+                        }
 
-                    // Settings Dialog
-                    if (showSettingsDialog) {
-                        SettingsDialog(
-                            viewModel = jotterViewModel,
-                            onDismiss = { showSettingsDialog = false }
-                        )
+                        // Settings Dialog
+                        if (showSettingsDialog) {
+                            SettingsDialog(
+                                viewModel = jotterViewModel,
+                                onDismiss = { showSettingsDialog = false }
+                            )
+                        }
                     }
                 }
             }

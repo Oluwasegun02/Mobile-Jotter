@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.model.ChecklistItem
 import com.example.model.NoteType
@@ -13,7 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [NoteEntity::class], version = 1, exportSchema = false)
+@Database(entities = [NoteEntity::class], version = 2, exportSchema = false)
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
 
@@ -54,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                         content = "Your fast, offline-ready companion for thoughts, tasks, voice memos, and sketches.\n\n✨ Features to explore:\n• Instant search by keyword & tags\n• Rich checklists with progress tracking\n• Creative sketch pad with colors & eraser\n• Audio voice memos & speech capture\n• Lock notes with 4-digit PIN\n• Dark/Light modes, fonts & pastel color themes\n• Swipe left to archive, swipe right to delete\n• Set reminder alerts for your tasks\n\nTap this card to edit or try adding a new jot below!",
                         noteType = NoteType.TEXT.name,
                         folder = "Ideas",
-                        tags = "welcome,tips,intro",
+                        tags = listOf("welcome", "tips", "intro"),
                         colorIndex = 1, // Lemon
                         isPinned = true,
                         isFavorite = true,
@@ -77,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                         content = "Key daily goals and productivity targets",
                         noteType = NoteType.CHECKLIST.name,
                         folder = "Personal",
-                        tags = "todo,daily,goals",
+                        tags = listOf("todo", "daily", "goals"),
                         colorIndex = 2, // Mint
                         isPinned = true,
                         checklistJson = NoteEntity.serializeChecklist(sampleChecklist),
@@ -115,7 +117,7 @@ abstract class AppDatabase : RoomDatabase() {
                         content = "Concept sketch for product architecture and layout.",
                         noteType = NoteType.SKETCH.name,
                         folder = "Work",
-                        tags = "design,sketch,mockup",
+                        tags = listOf("design", "sketch", "mockup"),
                         colorIndex = 3, // Lavender
                         sketchDataJson = NoteEntity.serializeSketchStrokes(sampleStrokes),
                         createdAt = System.currentTimeMillis() - 180000,
@@ -130,7 +132,7 @@ abstract class AppDatabase : RoomDatabase() {
                         content = "Audio recording for the weekend sprint: review UI interactions, verify gesture response, and test reminder notifications.",
                         noteType = NoteType.AUDIO.name,
                         folder = "Study",
-                        tags = "voice,audio,sprint",
+                        tags = listOf("voice", "audio", "sprint"),
                         colorIndex = 4, // Rose
                         audioDurationSeconds = 42,
                         createdAt = System.currentTimeMillis() - 240000,

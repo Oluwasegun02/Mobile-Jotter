@@ -132,6 +132,9 @@ class AudioPlayerHelper {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _currentPlayingPath = MutableStateFlow<String?>(null)
+    val currentPlayingPath: StateFlow<String?> = _currentPlayingPath.asStateFlow()
+
     private val _currentPositionSec = MutableStateFlow(0)
     val currentPositionSec: StateFlow<Int> = _currentPositionSec.asStateFlow()
 
@@ -152,6 +155,7 @@ class AudioPlayerHelper {
             }
             mediaPlayer = player
             _isPlaying.value = true
+            _currentPlayingPath.value = filePath
             val totalSec = (player.duration / 1000).coerceAtLeast(1)
             _totalDurationSec.value = totalSec
 
@@ -205,6 +209,7 @@ class AudioPlayerHelper {
         }
         mediaPlayer = null
         _isPlaying.value = false
+        _currentPlayingPath.value = null
         _currentPositionSec.value = 0
     }
 }

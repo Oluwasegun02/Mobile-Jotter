@@ -25,16 +25,26 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -44,8 +54,11 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +73,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.AudioPlayerHelper
 import com.example.data.NoteEntity
 import com.example.model.NoteColorThemes
 import com.example.model.NoteFontStyle
@@ -79,6 +93,8 @@ fun NoteCard(
     onFavoriteClick: () -> Unit,
     onArchiveSwipe: () -> Unit,
     onDeleteSwipe: () -> Unit,
+    onShareClick: (() -> Unit)? = null,
+    onExportTxtClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
@@ -87,6 +103,8 @@ fun NoteCard(
     val borderColor = if (isDark) colorTheme.cardBorderDark else colorTheme.cardBorderLight
     val primaryText = if (isDark) colorTheme.textColorDark else colorTheme.textColorLight
     val secondaryText = primaryText.copy(alpha = 0.72f)
+
+    var showCardMenu by remember { mutableStateOf(false) }
 
     val font = try {
         NoteFontStyle.valueOf(note.fontStyle).fontFamily
@@ -157,7 +175,10 @@ fun NoteCard(
                 )
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = onLongClick
+                    onLongClick = {
+                        showCardMenu = true
+                        onLongClick()
+                    }
                 )
                 .testTag("note_card_${note.id}")
                 .padding(16.dp)
@@ -167,7 +188,7 @@ fun NoteCard(
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Header row: Folder Tag, Pin, Favorite
+                    // Header row: Folder Tag, Pin, Favorite, More
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -230,6 +251,95 @@ fun NoteCard(
                                     tint = if (note.isPinned) primaryText else primaryText.copy(alpha = 0.35f),
                                     modifier = Modifier.size(15.dp)
                                 )
+                            }
+
+                            Box {
+                                IconButton(
+                                    onClick = { showCardMenu = true },
+                                    modifier = Modifier.size(24.dp).testTag("note_card_more_${note.id}")
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "Options",
+                                        tint = primaryText.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showCardMenu,
+                                    onDismissRequest = { showCardMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (note.isPinned) "Unpin" else "Pin") },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (note.isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            onPinClick()
+                                            showCardMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(if (note.isFavorite) "Unfavorite" else "Favorite") },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (note.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            onFavoriteClick()
+                                            showCardMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Archive") },
+                                        leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                                        onClick = {
+                                            onArchiveSwipe()
+                                            showCardMenu = false
+                                        }
+                                    )
+                                    if (onShareClick != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Share Note") },
+                                            leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                                            onClick = {
+                                                onShareClick()
+                                                showCardMenu = false
+                                            }
+                                        )
+                                    }
+                                    if (onExportTxtClick != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Export as .txt") },
+                                            leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                                            onClick = {
+                                                onExportTxtClick()
+                                                showCardMenu = false
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("Move to Trash", color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Outlined.Delete,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        },
+                                        onClick = {
+                                            onDeleteSwipe()
+                                            showCardMenu = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

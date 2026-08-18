@@ -149,10 +149,28 @@ enum class ViewMode {
     LIST
 }
 
+enum class NoteSortOrder(val label: String) {
+    NEWEST_FIRST("Newest first"),
+    OLDEST_FIRST("Oldest first"),
+    ALPHABETICAL("Alphabetical (A-Z)")
+}
+
 enum class ScreenDestination {
     HOME,
     EDITOR,
+    CALENDAR_JOURNEY,
     ARCHIVE,
     TRASH,
     SETTINGS
+}
+
+sealed class DateFilterState {
+    object All : DateFilterState()
+    object Today : DateFilterState()
+    object ThisWeek : DateFilterState()
+    data class SpecificDate(val epochMillis: Long, val label: String) : DateFilterState()
+    data class CustomRange(val startMillis: Long, val endMillis: Long, val label: String) : DateFilterState()
+
+    val isActive: Boolean
+        get() = this !is All
 }

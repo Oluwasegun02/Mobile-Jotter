@@ -10,15 +10,47 @@ class SecurityManager(context: Context) {
         context.getSharedPreferences("jotter_security_prefs", Context.MODE_PRIVATE)
 
     private val unlockedNoteIds = mutableSetOf<Long>()
+    private var isSessionUnlocked: Boolean = false
 
     fun hasMasterPin(): Boolean {
         return prefs.getString(KEY_PIN_HASH, null) != null
     }
 
+    fun isAppLockEnabled(): Boolean {
+        // App lock is enabled if a master PIN exists and startup lock hasn't been explicitly disabled
+        return hasMasterPin() && prefs.getBoolean(KEY_STARTUP_LOCK_ENABLED, true)
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_STARTUP_LOCK_ENABLED, enabled).apply()
+    }
+
+    fun isAppUnlocked(): Boolean {
+        if (!isAppLockEnabled()) return true
+        return isSessionUnlocked
+    }
+
+    fun unlockApp(pin: String): Boolean {
+        if (verifyMasterPin(pin)) {
+            isSessionUnlocked = true
+            return true
+        }
+        return false
+    }
+
+    fun lockApp() {
+        isSessionUnlocked = false
+        unlockedNoteIds.clear()
+    }
+
     fun setMasterPin(pin: String): Boolean {
         if (pin.length != 4 || !pin.all { it.isDigit() }) return false
         val hash = hashPin(pin)
-        prefs.edit().putString(KEY_PIN_HASH, hash).apply()
+        prefs.edit()
+            .putString(KEY_PIN_HASH, hash)
+            .putBoolean(KEY_STARTUP_LOCK_ENABLED, true)
+            .apply()
+        isSessionUnlocked = true
         return true
     }
 
@@ -40,8 +72,12 @@ class SecurityManager(context: Context) {
     }
 
     fun removeMasterPin() {
-        prefs.edit().remove(KEY_PIN_HASH).apply()
+        prefs.edit()
+            .remove(KEY_PIN_HASH)
+            .putBoolean(KEY_STARTUP_LOCK_ENABLED, false)
+            .apply()
         unlockedNoteIds.clear()
+        isSessionUnlocked = true
     }
 
     private fun hashPin(pin: String): String {
@@ -51,5 +87,6 @@ class SecurityManager(context: Context) {
 
     companion object {
         private const val KEY_PIN_HASH = "master_pin_hash"
+        private const val KEY_STARTUP_LOCK_ENABLED = "startup_lock_enabled"
     }
 }

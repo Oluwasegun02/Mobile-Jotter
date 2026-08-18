@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
@@ -293,11 +294,21 @@ fun EditorScreen(
                             )
 
                             DropdownMenuItem(
-                                text = { Text("Share Note") },
+                                text = { Text("Share Note Content") },
                                 leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                                 onClick = {
                                     viewModel.flushAutosaveNow()
-                                    viewModel.shareNote(context, editorState.noteId)
+                                    viewModel.shareEditorNoteContent(context)
+                                    showMoreMenu = false
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Export as .txt File") },
+                                leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                                onClick = {
+                                    viewModel.flushAutosaveNow()
+                                    viewModel.exportEditorNoteAsTxtFile(context)
                                     showMoreMenu = false
                                 }
                             )

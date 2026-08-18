@@ -17,7 +17,7 @@ data class NoteEntity(
     val content: String = "",
     val noteType: String = NoteType.TEXT.name,
     val folder: String = "General",
-    val tags: String = "", // Comma-separated tags e.g. "work,ideas"
+    val tags: List<String> = emptyList(), // Direct List<String> field for tags
     val colorIndex: Int = 0,
     val fontStyle: String = "SANS",
     val fontSize: Float = 16f,
@@ -84,10 +84,10 @@ data class NoteEntity(
         }
     }
 
-    fun getTagList(): List<String> {
-        if (tags.isBlank()) return emptyList()
-        return tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-    }
+    /**
+     * Helper to return tags cleanly
+     */
+    fun getTagList(): List<String> = tags
 
     companion object {
         fun serializeChecklist(items: List<ChecklistItem>): String {
