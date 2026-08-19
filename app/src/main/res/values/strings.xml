@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Jotter</string>
+    <string name="widget_name">Jotter Pinned Notes</string>
+    <string name="widget_description">Quickly view pinned notes and create new jots, diaries, or checklists from your home screen.</string>
 </resources>

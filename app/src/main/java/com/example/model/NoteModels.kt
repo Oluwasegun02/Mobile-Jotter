@@ -7,7 +7,8 @@ enum class NoteType {
     TEXT,
     CHECKLIST,
     SKETCH,
-    AUDIO
+    AUDIO,
+    DIARY
 }
 
 data class ChecklistItem(
@@ -159,6 +160,7 @@ enum class ScreenDestination {
     HOME,
     EDITOR,
     CALENDAR_JOURNEY,
+    DASHBOARD,
     ARCHIVE,
     TRASH,
     SETTINGS
@@ -174,3 +176,24 @@ sealed class DateFilterState {
     val isActive: Boolean
         get() = this !is All
 }
+
+data class FolderItem(
+    val name: String,
+    val noteCount: Int = 0,
+    val colorHex: Long = 0xFF3B82F6,
+    val isSystem: Boolean = false
+)
+
+object FolderColorPresets {
+    val colors = listOf(
+        0xFF3B82F6, // Blue
+        0xFF10B981, // Emerald / Green
+        0xFF8B5CF6, // Purple
+        0xFFF59E0B, // Amber / Warm Orange
+        0xFFEC4899, // Pink / Rose
+        0xFF06B6D4, // Cyan / Teal
+        0xFFEF4444, // Crimson Red
+        0xFF64748B  // Slate Grey
+    )
+}
+

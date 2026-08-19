@@ -32,6 +32,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
@@ -104,6 +106,8 @@ fun CalendarJourneyScreen(
         Calendar.getInstance().apply { timeInMillis = selectedMillis }
     }
 
+    var journeyTabFilter by remember { mutableStateOf("ALL") }
+
     val todayCal = remember {
         Calendar.getInstance()
     }
@@ -113,6 +117,18 @@ fun CalendarJourneyScreen(
     val isTodaySelected = remember(selectedCal, todayCal) {
         selectedCal.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) &&
         selectedCal.get(Calendar.DAY_OF_YEAR) == todayCal.get(Calendar.DAY_OF_YEAR)
+    }
+
+    val displayedNotes = remember(selectedNotes, journeyTabFilter) {
+        val filtered = when (journeyTabFilter) {
+            "DIARY" -> selectedNotes.filter { it.noteType == NoteType.DIARY.name }
+            "JOTS" -> selectedNotes.filter { it.noteType != NoteType.DIARY.name }
+            else -> selectedNotes
+        }
+        filtered.sortedWith(
+            compareByDescending<NoteEntity> { it.isPinned }
+                .thenByDescending { it.updatedAt }
+        )
     }
 
     Scaffold(
@@ -261,10 +277,17 @@ fun CalendarJourneyScreen(
                     ) {
                         item {
                             QuickLogChip(
-                                icon = Icons.Default.Edit,
-                                label = "Write Log",
-                                onClick = { viewModel.createJourneyEntry(NoteType.TEXT, selectedMillis) },
+                                icon = Icons.Default.Book,
+                                label = "Daily Living Diary",
+                                onClick = { viewModel.createDiaryEntry(selectedMillis) },
                                 isPrimary = true
+                            )
+                        }
+                        item {
+                            QuickLogChip(
+                                icon = Icons.Default.Edit,
+                                label = "Quick Jot",
+                                onClick = { viewModel.createJourneyEntry(NoteType.TEXT, selectedMillis) }
                             )
                         }
                         item {
@@ -320,19 +343,83 @@ fun CalendarJourneyScreen(
                             }
                         }
                     }
+
+                    if (selectedNotes.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        // Type filter tabs (All, Diary, Other Jots)
+                        val diaryCount = selectedNotes.count { it.noteType == NoteType.DIARY.name }
+                        val jotsCount = selectedNotes.count { it.noteType != NoteType.DIARY.name }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (journeyTabFilter == "ALL") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { journeyTabFilter = "ALL" }
+                            ) {
+                                Text(
+                                    text = "All (${selectedNotes.size})",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (journeyTabFilter == "ALL") FontWeight.Bold else FontWeight.Normal,
+                                    color = if (journeyTabFilter == "ALL") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            if (diaryCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (journeyTabFilter == "DIARY") MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { journeyTabFilter = "DIARY" }
+                                ) {
+                                    Text(
+                                        text = "📖 Diary ($diaryCount)",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (journeyTabFilter == "DIARY") FontWeight.Bold else FontWeight.Normal,
+                                        color = if (journeyTabFilter == "DIARY") MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            if (jotsCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (journeyTabFilter == "JOTS") MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { journeyTabFilter = "JOTS" }
+                                ) {
+                                    Text(
+                                        text = "📝 Jots ($jotsCount)",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (journeyTabFilter == "JOTS") FontWeight.Bold else FontWeight.Normal,
+                                        color = if (journeyTabFilter == "JOTS") MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             // List of Notes for Selected Date
-            if (selectedNotes.isEmpty()) {
+            if (displayedNotes.isEmpty()) {
                 item {
                     EmptyJourneyDateView(
                         isToday = isTodaySelected,
-                        onAddEntry = { viewModel.createJourneyEntry(NoteType.TEXT, selectedMillis) }
+                        onAddDiary = { viewModel.createDiaryEntry(selectedMillis) },
+                        onAddJot = { viewModel.createJourneyEntry(NoteType.TEXT, selectedMillis) }
                     )
                 }
             } else {
-                items(selectedNotes, key = { it.id }) { note ->
+                items(displayedNotes, key = { it.id }) { note ->
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         NoteCard(
                             note = note,
@@ -593,6 +680,8 @@ private fun DayCell(
             if (notesCount > 0 && isCurrentMonth) {
                 val dotColor = if (isSelected) {
                     MaterialTheme.colorScheme.onPrimary
+                } else if (noteTypes.contains("DIARY")) {
+                    Color(0xFFE91E63) // Distinct Rose for Diary
                 } else if (noteTypes.contains("AUDIO")) {
                     Color(0xFFE65100)
                 } else if (noteTypes.contains("SKETCH")) {
@@ -665,7 +754,8 @@ private fun QuickLogChip(
 @Composable
 private fun EmptyJourneyDateView(
     isToday: Boolean,
-    onAddEntry: () -> Unit
+    onAddDiary: () -> Unit,
+    onAddJot: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -684,32 +774,47 @@ private fun EmptyJourneyDateView(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (isToday) "✍️" else "📖",
+                text = if (isToday) "📖" else "✍️",
                 fontSize = 32.sp
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = if (isToday) "No journey entry for today yet" else "No entries on this day",
+                text = if (isToday) "No diary or jots logged today yet" else "No entries on this day",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = if (isToday) "Capture highlights, thoughts, or tasks from your day." else "Log retrospectively or add an entry for this date.",
+                text = if (isToday) "Write your daily living reflection or create a quick jot to keep your streak glowing." else "Log retrospectively or add an entry for this date.",
                 fontSize = 12.5.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(14.dp))
-            Button(
-                onClick = onAddEntry,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.testTag("start_daily_entry_button")
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Log Entry for This Day", fontSize = 13.sp)
+                Button(
+                    onClick = onAddDiary,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("start_daily_diary_button")
+                ) {
+                    Icon(Icons.Default.Book, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Daily Living Diary", fontSize = 12.5.sp)
+                }
+
+                OutlinedButton(
+                    onClick = onAddJot,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("start_daily_jot_button")
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Quick Jot", fontSize = 12.5.sp)
+                }
             }
         }
     }

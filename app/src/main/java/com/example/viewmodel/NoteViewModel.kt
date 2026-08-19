@@ -19,7 +19,10 @@ typealias NoteViewModel = JotterViewModel
  */
 class NoteViewModelFactory(
     private val application: Application,
-    private val repository: NoteRepository = NoteRepository(AppDatabase.getDatabase(application).noteDao())
+    private val repository: NoteRepository = NoteRepository(
+        AppDatabase.getDatabase(application).noteDao(),
+        AppDatabase.getDatabase(application).folderDao()
+    )
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

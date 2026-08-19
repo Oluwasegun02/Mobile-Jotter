@@ -43,6 +43,15 @@ interface NoteDao {
     @Query("SELECT COUNT(*) FROM notes WHERE isDeleted = 1")
     fun getDeletedNotesCount(): Flow<Int>
 
+    @Query("UPDATE notes SET folder = :newFolderName, updatedAt = :updatedAt WHERE folder = :oldFolderName")
+    suspend fun renameFolderInNotes(oldFolderName: String, newFolderName: String, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE notes SET folder = :newFolderName, updatedAt = :updatedAt WHERE id = :noteId")
+    suspend fun moveNoteToFolder(noteId: Long, newFolderName: String, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE notes SET folder = :targetFolderName, updatedAt = :updatedAt WHERE folder = :sourceFolderName")
+    suspend fun moveAllNotesInFolder(sourceFolderName: String, targetFolderName: String, updatedAt: Long = System.currentTimeMillis())
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNote(note: NoteEntity): Long
 
@@ -63,6 +72,18 @@ interface NoteDao {
 
     @Query("UPDATE notes SET isFavorite = :isFavorite, updatedAt = :updatedAt WHERE id = :id")
     suspend fun setFavorite(id: Long, isFavorite: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM notes WHERE isDeleted = 0 ORDER BY id ASC")
+    suspend fun getAllActiveNotesSync(): List<NoteEntity>
+
+    @Query("SELECT * FROM notes ORDER BY id ASC")
+    suspend fun getAllNotesSync(): List<NoteEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotes(notes: List<NoteEntity>): List<Long>
+
+    @Query("DELETE FROM notes")
+    suspend fun clearAllNotes()
 
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNotePermanent(id: Long)

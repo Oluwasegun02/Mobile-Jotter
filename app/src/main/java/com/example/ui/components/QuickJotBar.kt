@@ -42,6 +42,7 @@ import com.example.ui.theme.MinimalPrimaryContainerLight
 @Composable
 fun QuickJotBar(
     onNewTextNote: () -> Unit,
+    onNewDiary: () -> Unit = {},
     onNewChecklist: () -> Unit,
     onNewSketch: () -> Unit,
     onNewAudio: () -> Unit,
@@ -78,16 +79,16 @@ fun QuickJotBar(
                     .weight(1f)
                     .clip(RoundedCornerShape(20.dp))
                     .clickable { onNewTextNote() }
-                    .padding(horizontal = 12.dp, vertical = 9.dp)
+                    .padding(horizontal = 10.dp, vertical = 9.dp)
                     .testTag("quick_jot_input_trigger"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("📝", fontSize = 16.sp)
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Quick jot...",
                     color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF44474E),
-                    fontSize = 14.5.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -95,35 +96,42 @@ fun QuickJotBar(
             // Action icons
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalArrangement = Arrangement.spacedBy(1.dp)
             ) {
                 IconButton(
+                    onClick = onNewDiary,
+                    modifier = Modifier.size(36.dp).clip(CircleShape).testTag("quick_diary_button")
+                ) {
+                    Text("📖", fontSize = 15.sp)
+                }
+
+                IconButton(
                     onClick = onNewChecklist,
-                    modifier = Modifier.size(38.dp).clip(CircleShape).testTag("quick_checklist_button")
+                    modifier = Modifier.size(36.dp).clip(CircleShape).testTag("quick_checklist_button")
                 ) {
                     Text("✅", fontSize = 15.sp)
                 }
 
                 IconButton(
                     onClick = onNewSketch,
-                    modifier = Modifier.size(38.dp).clip(CircleShape).testTag("quick_sketch_button")
+                    modifier = Modifier.size(36.dp).clip(CircleShape).testTag("quick_sketch_button")
                 ) {
                     Text("🎨", fontSize = 15.sp)
                 }
 
                 IconButton(
                     onClick = onNewAudio,
-                    modifier = Modifier.size(38.dp).clip(CircleShape).testTag("quick_voice_button")
+                    modifier = Modifier.size(36.dp).clip(CircleShape).testTag("quick_voice_button")
                 ) {
                     Text("🎙️", fontSize = 15.sp)
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(3.dp))
 
                 // Primary Add FAB Pill
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(if (isDark) MinimalPrimaryContainerLight else MinimalPrimaryContainerLight)
                         .clickable { onNewTextNote() }
@@ -132,7 +140,7 @@ fun QuickJotBar(
                 ) {
                     Text(
                         text = "+",
-                        fontSize = 22.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Light,
                         color = MinimalOnPrimaryContainerLight
                     )

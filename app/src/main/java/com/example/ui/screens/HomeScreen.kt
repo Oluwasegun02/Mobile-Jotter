@@ -41,7 +41,10 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
@@ -52,6 +55,8 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -71,11 +76,14 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -100,13 +108,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.DateFilterState
+import com.example.model.FolderItem
 import com.example.model.NoteSortOrder
 import com.example.model.NoteType
 import com.example.model.ScreenDestination
 import com.example.model.ViewMode
+import com.example.ui.components.CreateFolderDialog
+import com.example.ui.components.ManageFoldersDialog
 import com.example.ui.components.MiniCalendarWidget
+import com.example.ui.components.MoveNoteDialog
 import com.example.ui.components.NoteCard
 import com.example.ui.components.QuickJotBar
+import com.example.ui.components.RenameFolderDialog
 import com.example.ui.theme.MinimalBgDark
 import com.example.ui.theme.MinimalBgLight
 import com.example.ui.theme.MinimalBorderLight
@@ -133,52 +146,79 @@ fun HomeScreen(
     val selectedFolder by viewModel.selectedFolder.collectAsState()
     val selectedTag by viewModel.selectedTag.collectAsState()
     val folders by viewModel.folderList.collectAsState()
+    val foldersWithCounts by viewModel.foldersWithCounts.collectAsState()
     val allTags by viewModel.allTags.collectAsState()
     val dateFilter by viewModel.dateFilter.collectAsState()
     val notesByDate by viewModel.notesByDateKey.collectAsState()
+
+    val moveDialogNote by viewModel.moveDialogNote.collectAsState()
+    val showManageFoldersDialog by viewModel.showManageFoldersDialog.collectAsState()
+    val folderToRename by viewModel.folderToRename.collectAsState()
+    val showCreateFolderDialog by viewModel.showCreateFolderDialog.collectAsState()
+    val snackbarMessage by viewModel.snackbarMessage.collectAsState()
 
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var showSortMenu by remember { mutableStateOf(false) }
-    var showNewFolderDialog by remember { mutableStateOf(false) }
-    var newFolderName by remember { mutableStateOf("") }
 
-    if (showNewFolderDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewFolderDialog = false },
-            title = { Text("Create Folder", fontWeight = FontWeight.SemiBold) },
-            text = {
-                OutlinedTextField(
-                    value = newFolderName,
-                    onValueChange = { newFolderName = it },
-                    label = { Text("Folder Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("new_folder_input")
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newFolderName.isNotBlank()) {
-                            viewModel.selectFolder(newFolderName.trim())
-                            showNewFolderDialog = false
-                            newFolderName = ""
-                        }
-                    },
-                    modifier = Modifier.testTag("confirm_create_folder_button")
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewFolderDialog = false }) {
-                    Text("Cancel")
-                }
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearSnackbar()
+        }
+    }
+
+    // Folder Management Dialogs
+    if (showCreateFolderDialog) {
+        CreateFolderDialog(
+            onDismiss = { viewModel.dismissCreateFolderDialog() },
+            onConfirm = { name, colorHex ->
+                viewModel.createFolder(name, colorHex)
+                viewModel.dismissCreateFolderDialog()
             }
+        )
+    }
+
+    folderToRename?.let { folder ->
+        RenameFolderDialog(
+            folder = folder,
+            onDismiss = { viewModel.dismissRenameFolderDialog() },
+            onConfirm = { newName, newColorHex ->
+                viewModel.renameFolder(folder.name, newName, newColorHex)
+                viewModel.dismissRenameFolderDialog()
+            }
+        )
+    }
+
+    moveDialogNote?.let { note ->
+        MoveNoteDialog(
+            note = note,
+            folders = foldersWithCounts,
+            onDismiss = { viewModel.dismissMoveNoteDialog() },
+            onFolderSelected = { targetFolder ->
+                viewModel.moveNoteToFolder(note.id, targetFolder)
+                viewModel.dismissMoveNoteDialog()
+            },
+            onCreateNewFolder = {
+                viewModel.dismissMoveNoteDialog()
+                viewModel.openCreateFolderDialog()
+            }
+        )
+    }
+
+    if (showManageFoldersDialog) {
+        ManageFoldersDialog(
+            folders = foldersWithCounts,
+            onDismiss = { viewModel.dismissManageFoldersDialog() },
+            onCreateFolder = { viewModel.openCreateFolderDialog() },
+            onRenameFolder = { folder -> viewModel.openRenameFolderDialog(folder) },
+            onDeleteFolder = { folder -> viewModel.deleteFolder(folder.name) },
+            onSelectFolder = { folderName -> viewModel.selectFolder(folderName) }
         )
     }
 
@@ -187,7 +227,7 @@ fun HomeScreen(
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier
-                    .width(280.dp)
+                    .width(290.dp)
                     .windowInsetsPadding(WindowInsets.statusBars),
                 drawerContainerColor = if (isDark) MaterialTheme.colorScheme.surface else Color(0xFFFDFBFF)
             ) {
@@ -230,7 +270,7 @@ fun HomeScreen(
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Description, contentDescription = null) },
                     label = { Text("All Jots", fontWeight = FontWeight.Medium) },
-                    selected = true,
+                    selected = selectedFolder == "All",
                     onClick = {
                         viewModel.selectFolder("All")
                         scope.launch { drawerState.close() }
@@ -271,26 +311,113 @@ fun HomeScreen(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
-                        .padding(horizontal = 24.dp)
+                        .padding(horizontal = 20.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Folders Section Header in Drawer
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "FOLDERS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.sp
+                    )
+
+                    Text(
+                        text = "Manage",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable {
+                                scope.launch { drawerState.close() }
+                                viewModel.openManageFoldersDialog()
+                            }
+                            .padding(4.dp)
+                            .testTag("drawer_manage_folders_button")
+                    )
+                }
+
+                // Dynamic Folder items in Drawer
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                ) {
+                    items(foldersWithCounts, key = { it.name }) { folder ->
+                        val isFolderSelected = selectedFolder.equals(folder.name, ignoreCase = true)
+                        val folderColor = Color(folder.colorHex)
+
+                        NavigationDrawerItem(
+                            icon = {
+                                Icon(
+                                    imageVector = if (folder.isSystem) Icons.Default.FolderSpecial else Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = if (isFolderSelected) MaterialTheme.colorScheme.primary else folderColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = folder.name,
+                                    fontWeight = if (isFolderSelected) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            },
+                            badge = {
+                                if (folder.noteCount > 0) {
+                                    Text(
+                                        text = "${folder.noteCount}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            selected = isFolderSelected,
+                            onClick = {
+                                viewModel.selectFolder(folder.name)
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .padding(horizontal = 20.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
 
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                    label = { Text("Settings & PIN", fontWeight = FontWeight.Medium) },
+                    label = { Text("Settings & Backup", fontWeight = FontWeight.Medium) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
                         onOpenSettings()
                     },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding).testTag("drawer_settings_item")
                 )
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     ) {
@@ -298,6 +425,7 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
             containerColor = if (isDark) MinimalBgDark else MinimalBgLight,
             contentWindowInsets = WindowInsets.statusBars,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             bottomBar = {
                 Box(
                     modifier = Modifier
@@ -306,6 +434,7 @@ fun HomeScreen(
                 ) {
                     QuickJotBar(
                         onNewTextNote = { viewModel.createNewNote(NoteType.TEXT) },
+                        onNewDiary = { viewModel.createDiaryEntry() },
                         onNewChecklist = { viewModel.createNewNote(NoteType.CHECKLIST) },
                         onNewSketch = { viewModel.createNewNote(NoteType.SKETCH) },
                         onNewAudio = { viewModel.createNewNote(NoteType.AUDIO) }
@@ -549,6 +678,9 @@ fun HomeScreen(
                 ) {
                     items(folders) { folder ->
                         val isSelected = selectedFolder.equals(folder, ignoreCase = true)
+                        val folderItem = foldersWithCounts.find { it.name.equals(folder, ignoreCase = true) }
+                        val folderColor = folderItem?.let { Color(it.colorHex) }
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
@@ -562,16 +694,36 @@ fun HomeScreen(
                                     shape = RoundedCornerShape(16.dp)
                                 )
                                 .clickable { viewModel.selectFolder(folder) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
                                 .testTag("folder_chip_$folder")
                         ) {
-                            Text(
-                                text = folder,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isSelected) (if (isDark) MinimalOnPrimaryContainerDark else MinimalOnPrimaryContainerLight)
-                                else (if (isDark) MaterialTheme.colorScheme.onSurface else MinimalTextSecondary)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (folderColor != null && folder != "All") {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(folderColor)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+                                Text(
+                                    text = folder,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isSelected) (if (isDark) MinimalOnPrimaryContainerDark else MinimalOnPrimaryContainerLight)
+                                    else (if (isDark) MaterialTheme.colorScheme.onSurface else MinimalTextSecondary)
+                                )
+                                if (folderItem != null && folderItem.noteCount > 0 && folder != "All") {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "(${folderItem.noteCount})",
+                                        fontSize = 11.sp,
+                                        color = if (isSelected) (if (isDark) MinimalOnPrimaryContainerDark.copy(alpha = 0.8f) else MinimalOnPrimaryContainerLight.copy(alpha = 0.8f))
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -580,13 +732,14 @@ fun HomeScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MinimalSurfaceContainer)
-                                .clickable { showNewFolderDialog = true }
+                                .clickable { viewModel.openCreateFolderDialog() }
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("home_add_folder_button")
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     Icons.Default.Add,
-                                    contentDescription = null,
+                                    contentDescription = "Add Folder",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(15.dp)
                                 )
@@ -596,6 +749,33 @@ fun HomeScreen(
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MinimalSurfaceContainer)
+                                .clickable { viewModel.openManageFoldersDialog() }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("home_manage_folders_button")
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Folder,
+                                    contentDescription = "Manage Folders",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Manage",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -842,6 +1022,7 @@ fun HomeScreen(
                                         onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                         onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
                                         onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                        onMoveToFolderClick = { viewModel.openMoveNoteDialog(note) },
                                         onShareClick = { viewModel.shareNoteContent(context, note) },
                                         onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                     )
@@ -869,6 +1050,7 @@ fun HomeScreen(
                                     onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                     onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
                                     onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                    onMoveToFolderClick = { viewModel.openMoveNoteDialog(note) },
                                     onShareClick = { viewModel.shareNoteContent(context, note) },
                                     onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                 )
@@ -911,6 +1093,7 @@ fun HomeScreen(
                                         onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                         onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
                                         onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                        onMoveToFolderClick = { viewModel.openMoveNoteDialog(note) },
                                         onShareClick = { viewModel.shareNoteContent(context, note) },
                                         onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                     )
@@ -938,6 +1121,7 @@ fun HomeScreen(
                                     onFavoriteClick = { viewModel.toggleFavoriteFromCard(note) },
                                     onArchiveSwipe = { viewModel.archiveNoteFromCard(note) },
                                     onDeleteSwipe = { viewModel.moveNoteToTrash(note.id) },
+                                    onMoveToFolderClick = { viewModel.openMoveNoteDialog(note) },
                                     onShareClick = { viewModel.shareNoteContent(context, note) },
                                     onExportTxtClick = { viewModel.exportNoteAsTxtFile(context, note) }
                                 )

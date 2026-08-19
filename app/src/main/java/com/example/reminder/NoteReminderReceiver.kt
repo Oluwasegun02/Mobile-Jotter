@@ -105,8 +105,12 @@ class ReminderManager(private val context: Context) {
                 } else {
                     am.set(AlarmManager.RTC_WAKEUP, epochMillis, pendingIntent)
                 }
-            } catch (e: SecurityException) {
-                am.set(AlarmManager.RTC_WAKEUP, epochMillis, pendingIntent)
+            } catch (e: Exception) {
+                try {
+                    am.set(AlarmManager.RTC_WAKEUP, epochMillis, pendingIntent)
+                } catch (e2: Exception) {
+                    // Fallback log
+                }
             }
         }
     }

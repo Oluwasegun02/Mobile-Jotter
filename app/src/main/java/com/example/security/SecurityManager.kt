@@ -81,7 +81,8 @@ class SecurityManager(context: Context) {
     }
 
     private fun hashPin(pin: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(pin.toByteArray(Charsets.UTF_8))
+        val salted = "jotter_secure_salt_v1_$pin"
+        val bytes = MessageDigest.getInstance("SHA-256").digest(salted.toByteArray(Charsets.UTF_8))
         return bytes.joinToString("") { "%02x".format(it) }
     }
 

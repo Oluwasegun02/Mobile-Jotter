@@ -14,10 +14,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [NoteEntity::class], version = 2, exportSchema = false)
+@Database(entities = [NoteEntity::class, FolderEntity::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
+    abstract fun folderDao(): FolderDao
 
     companion object {
         @Volatile
@@ -44,8 +45,22 @@ abstract class AppDatabase : RoomDatabase() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 CoroutineScope(Dispatchers.IO).launch {
-                    populateInitialNotes(getDatabase(context).noteDao())
+                    val appDb = getDatabase(context)
+                    populateInitialFolders(appDb.folderDao())
+                    populateInitialNotes(appDb.noteDao())
                 }
+            }
+
+            private suspend fun populateInitialFolders(dao: FolderDao) {
+                val defaultFolders = listOf(
+                    FolderEntity(name = "General", colorHex = 0xFF64748B),
+                    FolderEntity(name = "Personal", colorHex = 0xFF10B981),
+                    FolderEntity(name = "Work", colorHex = 0xFF3B82F6),
+                    FolderEntity(name = "Ideas", colorHex = 0xFFF59E0B),
+                    FolderEntity(name = "Study", colorHex = 0xFF8B5CF6),
+                    FolderEntity(name = "Journal", colorHex = 0xFFEC4899)
+                )
+                defaultFolders.forEach { dao.insertFolder(it) }
             }
 
             private suspend fun populateInitialNotes(dao: NoteDao) {

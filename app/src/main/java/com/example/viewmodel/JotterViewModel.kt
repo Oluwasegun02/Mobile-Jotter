@@ -9,10 +9,13 @@ import com.example.audio.AudioPlayerHelper
 import com.example.audio.AudioRecorderHelper
 import com.example.audio.SpeechToTextHelper
 import com.example.data.AppDatabase
+import com.example.data.FolderEntity
 import com.example.data.NoteEntity
 import com.example.data.NoteRepository
 import com.example.model.ChecklistItem
 import com.example.model.DateFilterState
+import com.example.model.FolderColorPresets
+import com.example.model.FolderItem
 import com.example.model.NoteFontStyle
 import com.example.model.NoteSortOrder
 import com.example.model.NoteType
@@ -65,7 +68,10 @@ data class EditorState(
 
 class JotterViewModel(
     application: Application,
-    private val repository: NoteRepository = NoteRepository(AppDatabase.getDatabase(application).noteDao()),
+    private val repository: NoteRepository = NoteRepository(
+        AppDatabase.getDatabase(application).noteDao(),
+        AppDatabase.getDatabase(application).folderDao()
+    ),
     val securityManager: SecurityManager = SecurityManager(application),
     val reminderManager: ReminderManager = ReminderManager(application),
     val audioRecorder: AudioRecorderHelper = AudioRecorderHelper(application),
@@ -89,8 +95,35 @@ class JotterViewModel(
     private val _selectedTag = MutableStateFlow<String?>(null)
     val selectedTag: StateFlow<String?> = _selectedTag.asStateFlow()
 
-    private val _isDarkMode = MutableStateFlow<Boolean?>(null) // null = system default
+    private val themePrefs = application.getSharedPreferences("jotter_theme_prefs", Context.MODE_PRIVATE)
+
+    private val _isDarkMode = MutableStateFlow<Boolean?>(
+        if (themePrefs.contains("is_dark_mode")) {
+            themePrefs.getBoolean("is_dark_mode", false)
+        } else {
+            null
+        }
+    )
     val isDarkMode: StateFlow<Boolean?> = _isDarkMode.asStateFlow()
+
+    private val _isStartupLockEnabled = MutableStateFlow(securityManager.isAppLockEnabled())
+    val isStartupLockEnabled: StateFlow<Boolean> = _isStartupLockEnabled.asStateFlow()
+
+    // Folder Dialog States
+    private val _moveDialogNote = MutableStateFlow<NoteEntity?>(null)
+    val moveDialogNote: StateFlow<NoteEntity?> = _moveDialogNote.asStateFlow()
+
+    private val _showManageFoldersDialog = MutableStateFlow(false)
+    val showManageFoldersDialog: StateFlow<Boolean> = _showManageFoldersDialog.asStateFlow()
+
+    private val _folderToRename = MutableStateFlow<FolderItem?>(null)
+    val folderToRename: StateFlow<FolderItem?> = _folderToRename.asStateFlow()
+
+    private val _showCreateFolderDialog = MutableStateFlow(false)
+    val showCreateFolderDialog: StateFlow<Boolean> = _showCreateFolderDialog.asStateFlow()
+
+    private val _snackbarMessage = MutableStateFlow<String?>(null)
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     // App PIN startup lock state
     private val _isAppLocked = MutableStateFlow(!securityManager.isAppUnlocked())
@@ -122,7 +155,7 @@ class JotterViewModel(
     val archivedNotes = repository.archivedNotes
     val deletedNotes = repository.deletedNotes
     val favoriteNotes = repository.favoriteNotes
-    val allDbFolders = repository.allFolders
+    val allDbFolders = repository.allDbFolders
     val activeNotesCount = repository.activeNotesCount
     val deletedNotesCount = repository.deletedNotesCount
 
@@ -233,14 +266,73 @@ class JotterViewModel(
         initialValue = emptyList()
     )
 
-    // Available folders list
-    val folderList: StateFlow<List<String>> = allDbFolders.combine(_selectedFolder) { dbFolders, _ ->
-        val defaultList = listOf("All", "Personal", "Work", "Ideas", "Study", "Journal")
-        (defaultList + dbFolders).distinct()
+    // Folder items with real-time note counts
+    val foldersWithCounts: StateFlow<List<FolderItem>> = combine(
+        allDbFolders,
+        rawActiveNotes
+    ) { dbFolders, notes ->
+        val defaultFolders = listOf(
+            FolderItem(name = "General", noteCount = 0, colorHex = 0xFF64748B, isSystem = true),
+            FolderItem(name = "Personal", noteCount = 0, colorHex = 0xFF10B981, isSystem = false),
+            FolderItem(name = "Work", noteCount = 0, colorHex = 0xFF3B82F6, isSystem = false),
+            FolderItem(name = "Ideas", noteCount = 0, colorHex = 0xFFF59E0B, isSystem = false),
+            FolderItem(name = "Study", noteCount = 0, colorHex = 0xFF8B5CF6, isSystem = false),
+            FolderItem(name = "Journal", noteCount = 0, colorHex = 0xFFEC4899, isSystem = false)
+        )
+
+        val map = linkedMapOf<String, FolderItem>()
+        // Defaults
+        defaultFolders.forEach { map[it.name.lowercase()] = it }
+
+        // Overlay DB folders
+        dbFolders.forEach { entity ->
+            val isSys = entity.name.equals("General", ignoreCase = true)
+            map[entity.name.lowercase()] = FolderItem(
+                name = entity.name,
+                noteCount = 0,
+                colorHex = entity.colorHex,
+                isSystem = isSys
+            )
+        }
+
+        // Count notes in each folder
+        notes.forEach { note ->
+            val folderKey = note.folder.ifBlank { "General" }.lowercase()
+            val existing = map[folderKey]
+            if (existing != null) {
+                map[folderKey] = existing.copy(noteCount = existing.noteCount + 1)
+            } else {
+                map[folderKey] = FolderItem(
+                    name = note.folder.ifBlank { "General" },
+                    noteCount = 1,
+                    colorHex = 0xFF3B82F6,
+                    isSystem = false
+                )
+            }
+        }
+
+        map.values.sortedWith(compareBy({ !it.isSystem }, { it.name.lowercase() }))
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = listOf("All", "Personal", "Work", "Ideas", "Study", "Journal")
+        initialValue = listOf(
+            FolderItem("General", 0, 0xFF64748B, true),
+            FolderItem("Personal", 0, 0xFF10B981, false),
+            FolderItem("Work", 0, 0xFF3B82F6, false),
+            FolderItem("Ideas", 0, 0xFFF59E0B, false),
+            FolderItem("Study", 0, 0xFF8B5CF6, false),
+            FolderItem("Journal", 0, 0xFFEC4899, false)
+        )
+    )
+
+    // Available folders list
+    val folderList: StateFlow<List<String>> = foldersWithCounts.map { folderItems ->
+        val names = folderItems.map { it.name }
+        listOf("All") + names
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = listOf("All", "General", "Personal", "Work", "Ideas", "Study", "Journal")
     )
 
     // Calendar & Daily Journey States
@@ -537,12 +629,122 @@ class JotterViewModel(
         _selectedFolder.value = folder
     }
 
+    fun createFolder(name: String, colorHex: Long = 0xFF3B82F6) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            repository.createFolder(trimmed, colorHex)
+            _snackbarMessage.value = "Created folder \"$trimmed\""
+        }
+    }
+
+    fun renameFolder(oldName: String, newName: String, newColorHex: Long? = null) {
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            repository.renameFolder(oldName, trimmed, newColorHex)
+            if (_selectedFolder.value.equals(oldName, ignoreCase = true)) {
+                _selectedFolder.value = trimmed
+            }
+            if (_editorState.value.folder.equals(oldName, ignoreCase = true)) {
+                _editorState.value = _editorState.value.copy(folder = trimmed)
+            }
+            _snackbarMessage.value = "Renamed folder to \"$trimmed\""
+        }
+    }
+
+    fun deleteFolder(folderName: String, destinationFolder: String = "General") {
+        if (folderName.equals("General", ignoreCase = true)) return
+        viewModelScope.launch {
+            repository.deleteFolder(folderName, destinationFolder)
+            if (_selectedFolder.value.equals(folderName, ignoreCase = true)) {
+                _selectedFolder.value = "All"
+            }
+            if (_editorState.value.folder.equals(folderName, ignoreCase = true)) {
+                _editorState.value = _editorState.value.copy(folder = destinationFolder)
+            }
+            _snackbarMessage.value = "Deleted folder \"$folderName\""
+        }
+    }
+
+    fun moveNoteToFolder(noteId: Long, folderName: String) {
+        val targetFolder = folderName.ifBlank { "General" }
+        viewModelScope.launch {
+            repository.moveNoteToFolder(noteId, targetFolder)
+            if (_editorState.value.noteId == noteId) {
+                _editorState.value = _editorState.value.copy(folder = targetFolder)
+            }
+            _snackbarMessage.value = "Moved note to \"$targetFolder\""
+        }
+    }
+
+    fun openMoveNoteDialog(note: NoteEntity) {
+        _moveDialogNote.value = note
+    }
+
+    fun dismissMoveNoteDialog() {
+        _moveDialogNote.value = null
+    }
+
+    fun openManageFoldersDialog() {
+        _showManageFoldersDialog.value = true
+    }
+
+    fun dismissManageFoldersDialog() {
+        _showManageFoldersDialog.value = false
+    }
+
+    fun openRenameFolderDialog(folder: FolderItem) {
+        _folderToRename.value = folder
+    }
+
+    fun dismissRenameFolderDialog() {
+        _folderToRename.value = null
+    }
+
+    fun openCreateFolderDialog() {
+        _showCreateFolderDialog.value = true
+    }
+
+    fun dismissCreateFolderDialog() {
+        _showCreateFolderDialog.value = false
+    }
+
+    fun clearSnackbar() {
+        _snackbarMessage.value = null
+    }
+
     fun selectTag(tag: String?) {
         _selectedTag.value = if (_selectedTag.value == tag) null else tag
     }
 
     fun setDarkMode(isDark: Boolean?) {
         _isDarkMode.value = isDark
+        if (isDark == null) {
+            themePrefs.edit().remove("is_dark_mode").apply()
+        } else {
+            themePrefs.edit().putBoolean("is_dark_mode", isDark).apply()
+        }
+    }
+
+    fun toggleDarkMode() {
+        val next = when (_isDarkMode.value) {
+            null -> false
+            false -> true
+            true -> null
+        }
+        setDarkMode(next)
+    }
+
+    fun setStartupLockEnabled(enabled: Boolean) {
+        securityManager.setAppLockEnabled(enabled)
+        _isStartupLockEnabled.value = enabled
+    }
+
+    fun removeMasterPin() {
+        securityManager.removeMasterPin()
+        _isStartupLockEnabled.value = false
+        _isAppLocked.value = false
     }
 
     // Note Creation & Editing
@@ -562,6 +764,37 @@ class JotterViewModel(
                 ChecklistItem(UUID.randomUUID().toString(), "", false)
             ) else emptyList(),
             autosaveStatus = "New note"
+        )
+        _currentScreen.value = ScreenDestination.EDITOR
+    }
+
+    fun createDiaryEntry(dateMillis: Long = System.currentTimeMillis()) {
+        flushAutosaveNow()
+        val dateFormatted = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.getDefault()).format(Date(dateMillis))
+        val defaultDiaryContent = """
+🌿 Daily Living Reflection
+• Today's Highlights: 
+
+🙏 Gratitude & Mindfulness:
+1. 
+2. 
+
+🌱 Daily Living Thoughts & Lessons:
+
+""".trimIndent()
+
+        _editorState.value = EditorState(
+            noteId = 0L,
+            title = "Diary — $dateFormatted",
+            content = defaultDiaryContent,
+            noteType = NoteType.DIARY,
+            folder = "Diary",
+            tags = listOf("Diary", "DailyLiving"),
+            colorIndex = 3, // Warm Peach / Comforting Theme
+            fontStyle = NoteFontStyle.SERIF,
+            fontSize = 16f,
+            createdAt = dateMillis,
+            autosaveStatus = "New Diary Entry"
         )
         _currentScreen.value = ScreenDestination.EDITOR
     }
@@ -998,6 +1231,102 @@ class JotterViewModel(
             context.startActivity(Intent.createChooser(intent, "Share Note via").apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             })
+        }
+    }
+
+    // ==================== BACKUP & RESTORE ====================
+    fun exportBackupJsonToUri(context: Context, uri: android.net.Uri, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val notes = repository.getAllNotesForBackup()
+                val jsonString = com.example.data.BackupManager.exportToJson(notes)
+                val success = com.example.data.BackupManager.writeTextToUri(context, uri, jsonString)
+                if (success) {
+                    onResult(true, "Exported ${notes.size} entries to JSON backup.")
+                } else {
+                    onResult(false, "Failed to write backup file.")
+                }
+            } catch (e: Exception) {
+                onResult(false, "Export failed: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun exportBackupTxtToUri(context: Context, uri: android.net.Uri, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val notes = repository.getAllNotesForBackup()
+                val txtString = com.example.data.BackupManager.exportToPlainText(notes)
+                val success = com.example.data.BackupManager.writeTextToUri(context, uri, txtString)
+                if (success) {
+                    onResult(true, "Exported ${notes.size} entries to text archive.")
+                } else {
+                    onResult(false, "Failed to write text export.")
+                }
+            } catch (e: Exception) {
+                onResult(false, "Export failed: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun shareBackupJson(context: Context) {
+        viewModelScope.launch {
+            try {
+                val notes = repository.getAllNotesForBackup()
+                val jsonString = com.example.data.BackupManager.exportToJson(notes)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_SUBJECT, "Jotter Backup - ${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}")
+                    putExtra(Intent.EXTRA_TEXT, jsonString)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(Intent.createChooser(intent, "Share JSON Backup via").apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun shareBackupTxt(context: Context) {
+        viewModelScope.launch {
+            try {
+                val notes = repository.getAllNotesForBackup()
+                val txtString = com.example.data.BackupManager.exportToPlainText(notes)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Jotter Text Backup - ${SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())}")
+                    putExtra(Intent.EXTRA_TEXT, txtString)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(Intent.createChooser(intent, "Share Notes Text Backup via").apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun importBackupFromUri(context: Context, uri: android.net.Uri, overwrite: Boolean, onResult: (Boolean, Int, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val jsonString = com.example.data.BackupManager.readTextFromUri(context, uri)
+                if (jsonString.isBlank()) {
+                    onResult(false, 0, "Selected file is empty or could not be read.")
+                    return@launch
+                }
+                val notes = com.example.data.BackupManager.parseJsonBackup(jsonString)
+                if (notes.isEmpty()) {
+                    onResult(false, 0, "No valid Jotter notes found in the selected file.")
+                    return@launch
+                }
+                repository.restoreNotes(notes, overwrite = overwrite)
+                onResult(true, notes.size, "Successfully restored ${notes.size} entries.")
+            } catch (e: Exception) {
+                onResult(false, 0, "Import failed: ${e.localizedMessage}")
+            }
         }
     }
 }

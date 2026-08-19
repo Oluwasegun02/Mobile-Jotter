@@ -248,6 +248,18 @@ fun EditorScreen(
                         )
                     }
 
+                    // Audio voice memo button
+                    IconButton(
+                        onClick = { viewModel.updateNoteType(NoteType.AUDIO) },
+                        modifier = Modifier.testTag("editor_audio_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Audio voice memo",
+                            tint = if (editorState.noteType == NoteType.AUDIO) colorTheme.accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     // Lock button
                     IconButton(
                         onClick = { viewModel.toggleLocked() },
@@ -571,12 +583,13 @@ fun EditorScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Note Type Selector Tabs (Text, Checklist, Sketch, Audio)
+            // Note Type Selector Tabs (Text, Diary, Checklist, Sketch, Audio)
             val noteTypes = listOf(
                 NoteType.TEXT to "Text",
+                NoteType.DIARY to "Diary",
                 NoteType.CHECKLIST to "Checklist",
                 NoteType.SKETCH to "Sketch",
-                NoteType.AUDIO to "Voice"
+                NoteType.AUDIO to "Audio"
             )
             val selectedTabIndex = noteTypes.indexOfFirst { it.first == editorState.noteType }.coerceAtLeast(0)
 
@@ -640,6 +653,155 @@ fun EditorScreen(
 
             // Body Area according to Note Type
             when (editorState.noteType) {
+                NoteType.DIARY -> {
+                    // Daily Living Diary Controls & Prompts
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(colorTheme.accentColor.copy(alpha = 0.08f))
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("📖", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Daily Living Diary & Journal",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorTheme.accentColor
+                                )
+                            }
+                            Text(
+                                text = SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(editorState.createdAt)),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Daily Mood Selector
+                        Text(
+                            text = "Today's Mood / Vibe:",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val moods = listOf("🌟 Grateful", "😊 Happy", "🌿 Calm", "☕ Focused", "💡 Inspired", "💭 Reflective", "🌧️ Low")
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            moods.forEach { mood ->
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (editorState.content.contains(mood)) colorTheme.accentColor else MaterialTheme.colorScheme.surface,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (editorState.content.contains(mood)) colorTheme.accentColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                                    ),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable {
+                                            if (!editorState.content.contains(mood)) {
+                                                val prefix = "✨ Mood: $mood\n\n"
+                                                viewModel.updateContent(prefix + editorState.content)
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = mood,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (editorState.content.contains(mood)) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Quick Living Prompts
+                        Text(
+                            text = "Insert Daily Living Prompt:",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val prompts = listOf(
+                            "+ Gratitude" to "\n\n🙏 Grateful for:\n1. \n2. ",
+                            "+ Daily Highlights" to "\n\n🎯 Today's Highlights:\n• ",
+                            "+ Lessons & Thoughts" to "\n\n💡 Today's Lessons & Thoughts:\n",
+                            "+ Tomorrow" to "\n\n🌱 Tomorrow's Focus:\n"
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            prompts.forEach { (label, template) ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, colorTheme.accentColor.copy(alpha = 0.4f)),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            viewModel.updateContent(editorState.content + template)
+                                        }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = colorTheme.accentColor,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    BasicTextField(
+                        value = editorState.content,
+                        onValueChange = { viewModel.updateContent(it) },
+                        textStyle = TextStyle(
+                            fontFamily = editorState.fontStyle.fontFamily,
+                            fontSize = editorState.fontSize.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = (editorState.fontSize * 1.55).sp
+                        ),
+                        cursorBrush = SolidColor(colorTheme.accentColor),
+                        decorationBox = { innerTextField ->
+                            if (editorState.content.isEmpty()) {
+                                Text(
+                                    text = "Write your daily living reflection, moments, experiences, and thoughts...",
+                                    fontFamily = editorState.fontStyle.fontFamily,
+                                    fontSize = editorState.fontSize.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    lineHeight = (editorState.fontSize * 1.55).sp
+                                )
+                            }
+                            innerTextField()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("editor_diary_content_input")
+                    )
+                }
+
                 NoteType.CHECKLIST -> {
                     ChecklistEditor(
                         items = editorState.checklistItems,

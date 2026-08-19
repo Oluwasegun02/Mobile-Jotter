@@ -1,10 +1,12 @@
 package com.example.ui.components
 
+import android.media.MediaPlayer
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
@@ -54,6 +57,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +97,7 @@ fun NoteCard(
     onFavoriteClick: () -> Unit,
     onArchiveSwipe: () -> Unit,
     onDeleteSwipe: () -> Unit,
+    onMoveToFolderClick: (() -> Unit)? = null,
     onShareClick: (() -> Unit)? = null,
     onExportTxtClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -105,6 +110,21 @@ fun NoteCard(
     val secondaryText = primaryText.copy(alpha = 0.72f)
 
     var showCardMenu by remember { mutableStateOf(false) }
+    var isCardAudioPlaying by remember { mutableStateOf(false) }
+    var cardMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(note.id) {
+        onDispose {
+            try {
+                cardMediaPlayer?.stop()
+                cardMediaPlayer?.release()
+            } catch (e: Exception) {
+                // ignore
+            }
+            cardMediaPlayer = null
+            isCardAudioPlaying = false
+        }
+    }
 
     val font = try {
         NoteFontStyle.valueOf(note.fontStyle).fontFamily
@@ -199,14 +219,21 @@ fun NoteCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(primaryText.copy(alpha = 0.10f))
+                                .then(
+                                    if (onMoveToFolderClick != null) {
+                                        Modifier.clickable { onMoveToFolderClick() }
+                                    } else Modifier
+                                )
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
-                            Text(
-                                text = note.folder.ifBlank { "General" },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = primaryText
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "📁 ${note.folder.ifBlank { "General" }}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryText
+                                )
+                            }
                         }
 
                         // Actions
@@ -296,6 +323,18 @@ fun NoteCard(
                                             showCardMenu = false
                                         }
                                     )
+                                    if (onMoveToFolderClick != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("Move to Folder") },
+                                            leadingIcon = {
+                                                Icon(Icons.Default.Folder, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                onMoveToFolderClick()
+                                                showCardMenu = false
+                                            }
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("Archive") },
                                         leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
@@ -470,40 +509,130 @@ fun NoteCard(
                             }
 
                             NoteType.AUDIO.name -> {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(vertical = 4.dp)
                                 ) {
                                     Row(
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(primaryText.copy(alpha = 0.08f))
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 8.dp).clip(CircleShape).background(primaryText))
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 14.dp).clip(CircleShape).background(primaryText))
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 10.dp).clip(CircleShape).background(primaryText))
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 18.dp).clip(CircleShape).background(primaryText))
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 11.dp).clip(CircleShape).background(primaryText))
-                                        Box(modifier = Modifier.size(width = 3.dp, height = 6.dp).clip(CircleShape).background(primaryText))
+                                        // Playback Toggle Button
+                                        IconButton(
+                                            onClick = {
+                                                if (isCardAudioPlaying) {
+                                                    try {
+                                                        cardMediaPlayer?.stop()
+                                                        cardMediaPlayer?.release()
+                                                    } catch (e: Exception) {
+                                                        // ignore
+                                                    }
+                                                    cardMediaPlayer = null
+                                                    isCardAudioPlaying = false
+                                                } else if (!note.audioFilePath.isNullOrBlank()) {
+                                                    try {
+                                                        val player = MediaPlayer().apply {
+                                                            setDataSource(note.audioFilePath)
+                                                            prepare()
+                                                            start()
+                                                            setOnCompletionListener {
+                                                                isCardAudioPlaying = false
+                                                                release()
+                                                                cardMediaPlayer = null
+                                                            }
+                                                        }
+                                                        cardMediaPlayer = player
+                                                        isCardAudioPlaying = true
+                                                    } catch (e: Exception) {
+                                                        isCardAudioPlaying = false
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp).testTag("note_card_audio_play_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isCardAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                contentDescription = if (isCardAudioPlaying) "Pause voice memo" else "Play voice memo",
+                                                tint = primaryText,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
+                                        // Waveform visualizer bars
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 14.dp else 8.dp).clip(CircleShape).background(primaryText))
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 8.dp else 14.dp).clip(CircleShape).background(primaryText))
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 18.dp else 10.dp).clip(CircleShape).background(primaryText))
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 12.dp else 18.dp).clip(CircleShape).background(primaryText))
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 16.dp else 11.dp).clip(CircleShape).background(primaryText))
+                                            Box(modifier = Modifier.size(width = 3.dp, height = if (isCardAudioPlaying) 10.dp else 6.dp).clip(CircleShape).background(primaryText))
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        Text(
+                                            text = if (note.audioDurationSeconds > 0) "${note.audioDurationSeconds}s" else "Audio",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryText
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "${note.audioDurationSeconds}s",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = primaryText
-                                    )
+
+                                    if (note.content.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = note.content,
+                                            fontFamily = font,
+                                            fontSize = 12.sp,
+                                            color = secondaryText,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                                if (note.content.isNotBlank()) {
-                                    Text(
-                                        text = note.content,
-                                        fontFamily = font,
-                                        fontSize = 12.sp,
-                                        color = secondaryText,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                            }
+
+                            NoteType.DIARY.name -> {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(primaryText.copy(alpha = 0.08f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("📖", fontSize = 11.sp)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Daily Living Diary",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryText
+                                        )
+                                    }
+                                    if (note.content.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = note.content,
+                                            fontFamily = font,
+                                            fontSize = 12.5.sp,
+                                            color = secondaryText,
+                                            lineHeight = 16.5.sp,
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
 
